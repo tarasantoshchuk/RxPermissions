@@ -27,6 +27,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import rx.Observable;
 import rx.functions.Func1;
@@ -36,6 +37,9 @@ public class RxPermissions {
 
     public static final String TAG = "RxPermissions";
     static RxPermissions sSingleton;
+
+    private static final String SHARED_PREFS_FILE = "com.tbruelle.rxpermissions";
+    private static final String KEY_REQUESTED_PERMISSIONS = "key_requested_permissions";
 
     public static RxPermissions getInstance(Context ctx) {
         if (sSingleton == null) {
@@ -53,6 +57,19 @@ public class RxPermissions {
 
     RxPermissions(Context ctx) {
         mCtx = ctx;
+
+        restorePermissionsRequests();
+    }
+
+    private void restorePermissionsRequests() {
+        Set<String> requestedPermissions = mCtx
+                .getSharedPreferences(SHARED_PREFS_FILE, Context.MODE_PRIVATE)
+                .getAll()
+                .keySet();
+
+        for(String permission: requestedPermissions) {
+            mSubjects.put(permission, PublishSubject.<Permission>create());
+        }
     }
 
     public void setLogging(boolean logging) {
@@ -192,6 +209,8 @@ public class RxPermissions {
                 unrequestedPermissions.add(permission);
                 subject = PublishSubject.create();
                 mSubjects.put(permission, subject);
+
+                addPermission(permission);
             }
 
             list.add(subject);
@@ -202,6 +221,14 @@ public class RxPermissions {
                     .toArray(new String[unrequestedPermissions.size()]));
         }
         return Observable.concat(Observable.from(list));
+    }
+
+    private void addPermission(String permission) {
+        mCtx
+                .getSharedPreferences(SHARED_PREFS_FILE, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(permission, true)
+                .commit();
     }
 
     /**
@@ -286,9 +313,14 @@ public class RxPermissions {
                 throw new IllegalStateException("RxPermissions.onRequestPermissionsResult invoked but didn't find the corresponding permission request.");
             }
             mSubjects.remove(permissions[i]);
+            removePermission(permissions[i]);
             boolean granted = grantResults[i] == PackageManager.PERMISSION_GRANTED;
             subject.onNext(new Permission(permissions[i], granted));
             subject.onCompleted();
         }
+    }
+
+    private void removePermission(String permission) {
+        mCtx.getSharedPreferences(SHARED_PREFS_FILE, Context.MODE_PRIVATE).edit().remove(permission).commit();
     }
 }
